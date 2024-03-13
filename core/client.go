@@ -42,7 +42,10 @@ func (c *Client) Send(payload string, action HandlerName) error {
 
 func (c *Client) startReceiveChannel(app *App) {
 	defer func() {
-		c.Conn.Close()
+		e := c.Conn.Close()
+		if e != nil {
+			return
+		}
 		app.removeClient(c.ID)
 	}()
 

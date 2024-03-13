@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"github.com/AlekseiKromski/at-socket-server/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"log"
@@ -31,10 +30,11 @@ type App struct {
 	server                 string
 	httpConnectionUpgraded websocket.Upgrader
 	mutex                  sync.Mutex
+	middleware             func(c *gin.Context)
 }
 
-func Start(engine *gin.Engine, hs *Handlers, conf *Config) (*App, error) {
-	app := App{engine: engine, Config: conf, Clients: make(Clients), mutex: sync.Mutex{}}
+func Start(engine *gin.Engine, hs *Handlers, middleware func(c *gin.Context), conf *Config) (*App, error) {
+	app := App{engine: engine, Config: conf, Clients: make(Clients), mutex: sync.Mutex{}, middleware: middleware}
 
 	//Start application
 	app.runApp(hs)
@@ -69,7 +69,7 @@ func (app *App) serverConfigure() error {
 		},
 	}
 
-	wsGroup := app.engine.Group("/ws/").Use(middleware.JwtCheck(app.Config.JwtSecret))
+	wsGroup := app.engine.Group("/ws/").Use(app.middleware)
 	{
 		wsGroup.GET("/connect", func(c *gin.Context) {
 			userID, exists := c.Get("uid")
@@ -108,13 +108,13 @@ func (app *App) addClient(userID string, conn *websocket.Conn) *Client {
 	app.mutex.Lock()
 	defer app.mutex.Unlock()
 
-	for {
-		c := CreateNewClient(userID, conn)
-		if app.Clients[c.ID] == nil {
-			app.Clients[c.ID] = c
-			return c
-		}
+	c := CreateNewClient(userID, conn)
+	if app.Clients[c.ID] != nil {
+		app.Clients[c.ID].Conn.Close()
 	}
+
+	app.Clients[c.ID] = c
+	return c
 }
 
 func (app *App) removeClient(id string) {
